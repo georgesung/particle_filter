@@ -69,12 +69,18 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 		double theta = dist_theta(gen);
 
 		// Motion model (bicycle model with 0 wheelbase?)
-		// xf = x0 + (v/th_dot)*(sin(th0 + th_dot*dt) - sin(th0))
-		// yf = y0 + (v/th_dot)*(cos(th0) - cos(th0 + th_dot*dt))
-		// thf = th0 + th_dot*dt
-		double theta_f = theta + yaw_rate * delta_t;
-		double x_f = x + (velocity/yaw_rate) * (sin(theta_f) - sin(theta));
-		double y_f = y + (velocity/yaw_rate) * (cos(theta) - cos(theta_f));
+		double theta_f;
+		double x_f;
+		double y_f;
+		if (yaw_rate < 1e-6) {  // some small number close to 0, effectively yaw_rate==0
+			theta_f = theta;
+			x_f = x + velocity * delta_t * cos(theta);
+			y_f = y + velocity * delta_t * sin(theta);
+		} else {  // yaw_rate != 0
+			theta_f = theta + yaw_rate * delta_t;
+			x_f = x + (velocity/yaw_rate) * (sin(theta_f) - sin(theta));
+			y_f = y + (velocity/yaw_rate) * (cos(theta) - cos(theta_f));
+		}
 
 		// Update values in particle
 		p.x = x_f;
@@ -192,8 +198,15 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				double mu_x = (double) lm.x_f;
 				double mu_y = (double) lm.y_f;
 
-				double exponent= (pow(x_obs - mu_x, 2))/pow(2 * sig_x, 2) + pow(y_obs - mu_y, 2)/pow(2 * sig_y, 2);
-				weight *= exp(-exponent) / (2 * M_PI * sig_x * sig_y);
+				double exponent = (pow(x_obs - mu_x, 2))/(2*pow(sig_x, 2)) + pow(y_obs - mu_y, 2)/(2*pow(sig_y, 2));
+				double obs_weight = exp(-exponent) / (2 * M_PI * sig_x * sig_y);
+
+				const double OBS_WEIGHT_THRESH = 1e-4;  // prevent weights from going completely to 0
+				if (obs_weight < OBS_WEIGHT_THRESH) {
+					obs_weight = OBS_WEIGHT_THRESH;
+				}
+
+				weight *= obs_weight;
 
 				has_obs = true;
 			}
@@ -202,7 +215,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		if (has_obs) {
 			p.weight = weight;
 		} else {
-			cout << "This particle has no valid observations!\n";
+			cout << "WARNING: This particle has no valid observations!\n";
 			p.weight = 0.0;
 		}
 	}
